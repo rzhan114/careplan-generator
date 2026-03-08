@@ -31,4 +31,4 @@ db.sqlite3
 # Node (之后加前端会用到)
 node_modules/
 build/
-dist/
+dist/!.env.example
