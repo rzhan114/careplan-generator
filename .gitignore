@@ -1,0 +1,34 @@
+# 环境变量和密钥（最重要！）
+.env
+.env.*
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+env/
+*.egg-info/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+
+# Docker
+.docker/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Node (之后加前端会用到)
+node_modules/
+build/
+dist/
