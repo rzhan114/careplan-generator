@@ -1,15 +1,29 @@
 version: "3.8"
 
 services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: careplan
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   backend:
     build: ./backend
     ports:
       - "8000:8000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DB_HOST=db          # ← 告诉 backend 去找叫 "db" 的容器
     volumes:
       - ./backend:/app
     command: python manage.py runserver 0.0.0.0:8000
+    depends_on:
+      - db                  # ← 先启动数据库再启动 backend
 
   frontend:
     build: ./frontend
@@ -19,3 +33,5 @@ services:
       - ./frontend/src:/app/src
     depends_on:
       - backend
+volumes:
+    postgres_data:            # ← 数据持久化，重启容器数据不会丢

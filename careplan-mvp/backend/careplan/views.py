@@ -1,17 +1,11 @@
 import os
-import uuid
+from .models import Patient, Provider, Order, CarePlan
 import anthropic
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 import json
 
-# ============================================================
-# 内存存储 - 代替数据库（Day 3 会换成真正的 PostgreSQL）
-# 就是一个 Python 字典，key 是订单 ID，value 是订单数据
-# 注意：服务器重启后数据会消失，这是 MVP 的故意局限
-# ============================================================
-ORDERS_STORE = {}
 
 
 # ============================================================
@@ -64,34 +58,57 @@ def create_order(request):
     # 1. 解析前端发来的 JSON 数据
     data = json.loads(request.body)
 
-    # 2. 生成一个唯一的订单 ID
-    order_id = str(uuid.uuid4())[:8]
+    #Use database to store data
+    # 2. 找或创建 Provider（NPI 是唯一标识）
+    provider, _ = Provider.objects.get_or_create(
+        npi=data['provider_npi'],
+        defaults={'name': data['provider_name']}
+    )
+    # 3. 找或创建 Patient（MRN 是唯一标识）
+    patient, _ = Patient.objects.get_or_create(
+        mrn=data['mrn'],
+        defaults={
+            'first_name': data['first_name'],
+            'last_name': data['last_name'],
+            'date_of_birth': '2000-01-01',
+        }
+    )
+    # 4. 创建 Order
+    order = Order.objects.create(
+        patient=patient,
+        provider=provider,
+        medication_name=data['medication_name'],
+        primary_diagnosis=data['primary_diagnosis'],
+        additional_diagnoses=data.get('additional_diagnoses', []),
+        medication_history=data.get('medication_history', []),
+        patient_records=data.get('patient_records', ''),
+    )
+    # 5. 创建 CarePlan（初始状态 pending）
+    careplan = CarePlan.objects.create(
+        order=order,
+        status=CarePlan.Status.PENDING
+    )
 
-    # 3. 把订单先存到内存（状态：processing）
-    ORDERS_STORE[order_id] = {
-        "id": order_id,
-        "status": "processing",
-        "patient_data": data,
-        "care_plan": None,
-    }
-
-    # 4. 同步调用 LLM（用户在这里等待，可能 10-30 秒）
+    # 6. 同步调用 LLM（用户在这里等待，可能 10-30 秒）
     # Day 4 会把这步改成异步，用户不用等了
     try:
-        care_plan_content = call_llm(data)
 
         # 5. 更新内存里的订单状态
-        ORDERS_STORE[order_id]["status"] = "completed"
-        ORDERS_STORE[order_id]["care_plan"] = care_plan_content
-
+        careplan.status = CarePlan.Status.PROCESSING
+        careplan.save()
+        care_plan_content = call_llm(data)
+        careplan.status = CarePlan.Status.COMPLETED
+        careplan.content = care_plan_content
+        careplan.save()
         return JsonResponse({
-            "id": order_id,
-            "status": "completed",
-            "care_plan": care_plan_content,
+            "id": careplan.id,
+            "status": careplan.status,
+            "care_plan": careplan.content,
         })
 
     except Exception as e:
-        ORDERS_STORE[order_id]["status"] = "failed"
+        careplan.status = CarePlan.Status.FAILED
+        careplan.save()
         return JsonResponse({"error": str(e)}, status=500)
 
 
@@ -102,9 +119,12 @@ def create_order(request):
 # ============================================================
 @require_http_methods(["GET"])
 def get_order(request, order_id):
-    order = ORDERS_STORE.get(order_id)
-
-    if not order:
+    try:
+        careplan = CarePlan.objects.get(id=order_id)
+        return JsonResponse({
+            "id": careplan.id,
+            "status": careplan.status,
+            "care_plan": careplan.content,
+        })
+    except CarePlan.DoesNotExist:
         return JsonResponse({"error": "Order not found"}, status=404)
-
-    return JsonResponse(order)

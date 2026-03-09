@@ -22,7 +22,15 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = "careplan.urls"
 
-# 数据库先不用 - Day 3 才会加上
-# 所有数据存在内存里（Python 字典）
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'careplan',
+        'USER': 'postgres',
+        'PASSWORD': 'postgres',
+        'HOST': os.environ.get('DB_HOST', 'db'),
+        'PORT': '5432',
+    }
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
