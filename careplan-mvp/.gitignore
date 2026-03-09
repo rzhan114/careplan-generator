@@ -1,0 +1,12 @@
+# 绝对不能上传到 GitHub 的文件
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Docker
+*.log
