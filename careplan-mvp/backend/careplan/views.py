@@ -4,6 +4,8 @@ import anthropic
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.conf import settings
+import redis
 import json
 
 
@@ -88,29 +90,29 @@ def create_order(request):
         order=order,
         status=CarePlan.Status.PENDING
     )
-
-    # 6. 同步调用 LLM（用户在这里等待，可能 10-30 秒）
-    # Day 4 会把这步改成异步，用户不用等了
     try:
-
-        # 5. 更新内存里的订单状态
-        careplan.status = CarePlan.Status.PROCESSING
-        careplan.save()
-        care_plan_content = call_llm(data)
-        careplan.status = CarePlan.Status.COMPLETED
-        careplan.content = care_plan_content
-        careplan.save()
-        return JsonResponse({
-            "id": careplan.id,
-            "status": careplan.status,
-            "care_plan": careplan.content,
-        })
-
+        r = redis.from_url(settings.REDIS_URL)
+        r.lpush(
+            'careplan_queue',
+            json.dumps({'careplan_id': careplan.id})
+            # 只放id，不放完整数据
+            # 原因：Worker会去数据库取最新数据，避免数据不一致
+        )
     except Exception as e:
-        careplan.status = CarePlan.Status.FAILED
-        careplan.save()
-        return JsonResponse({"error": str(e)}, status=500)
+        # Redis放入失败：CarePlan已经存在数据库里了（status=pending）
+        # 暂时先记录错误，不影响返回
+        # ⚠️ 这里有个问题：数据库有记录但队列里没有任务
+        # Day 5 之后我们会讨论怎么处理这种情况
+        print(f"Redis error: {e}")
 
+    # ===== 改动3：立刻返回，不等LLM =====
+    return JsonResponse({
+        "id": careplan.id,
+        "status": careplan.status,
+        "message": "Recieved,Processing",
+        # 注意：这里没有 care_plan 字段了
+        # 因为还没生成，用 GET /api/orders/<id>/ 来查结果
+    })
 
 # ============================================================
 # GET /api/orders/<order_id>/
