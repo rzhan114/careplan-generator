@@ -36,3 +36,7 @@ DATABASES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Redis配置
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+# 加 Celery 配置
+CELERY_BROKER_URL = 'redis://redis:6379/0'
+CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
+CELERY_TASK_SERIALIZER = 'json'

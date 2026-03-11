@@ -20,6 +20,20 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+  worker:
+    build: ./backend
+    command: celery -A careplan worker --loglevel=info 
+    environment:
+      - REDIS_HOST=redis
+      - USE_MOCK_LLM=true
+      - DJANGO_SETTINGS_MODULE=careplan.settings
+      - DB_HOST=db
+      - PYTHONUNBUFFERED=1 
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
   backend:
     build: ./backend
     ports:

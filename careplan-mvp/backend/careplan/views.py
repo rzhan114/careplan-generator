@@ -4,6 +4,7 @@ import anthropic
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from careplan.tasks import generate_careplan_task
 from django.conf import settings
 import redis
 import json
@@ -91,13 +92,7 @@ def create_order(request):
         status=CarePlan.Status.PENDING
     )
     try:
-        r = redis.from_url(settings.REDIS_URL)
-        r.lpush(
-            'careplan_queue',
-            json.dumps({'careplan_id': careplan.id})
-            # 只放id，不放完整数据
-            # 原因：Worker会去数据库取最新数据，避免数据不一致
-        )
+        generate_careplan_task.delay(careplan.id)
     except Exception as e:
         # Redis放入失败：CarePlan已经存在数据库里了（status=pending）
         # 暂时先记录错误，不影响返回
