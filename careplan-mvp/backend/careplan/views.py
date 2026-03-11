@@ -125,3 +125,19 @@ def get_order(request, order_id):
         })
     except CarePlan.DoesNotExist:
         return JsonResponse({"error": "Order not found"}, status=404)
+@require_http_methods(["GET"])
+def get_careplan_status(request, careplan_id):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        careplan = CarePlan.objects.get(id=careplan_id)
+    except CarePlan.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    response = {
+        'id': careplan.id,
+        'status': careplan.status,  # pending / processing / completed / failed
+        'content': None,
+    }
+    if careplan.status == 'completed':
+        response['content'] = careplan.content
+    return JsonResponse(response)

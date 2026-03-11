@@ -35,18 +35,28 @@ Monitoring plan:
             model="claude-sonnet-4-6",
             max_tokens=1000,
             messages=[{"role": "user", "content": f"""
-Generate a care plan for:
+You are a clinical pharmacist. Generate a professional care plan based on the following patient information.
+Patient Information:
 Patient: {patient.first_name} {patient.last_name}
+MRN: {patient.mrn}
 Medication: {order.medication_name}
-Diagnosis: {order.primary_diagnosis}
-Records: {order.patient_records}
+Primary Diagnosis: {order.primary_diagnosis}
+Additional Diagnoses: {order.additional_diagnoses}
+Medication History: {order.medication_history}
+Patient Records: {order.patient_records}
 Referring Provider: {provider.name} (NPI: {provider.npi})
 
-Include: Problem list, Goals, Pharmacist interventions, Monitoring plan.
+Please generate a comprehensive care plan that includes:
+
+1. Problem List / Drug Therapy Problems (DTPs)
+2. Goals (SMART goals)
+3. Pharmacist Interventions / Plan
+4. Monitoring Plan & Lab Schedule
+
+Format the response clearly with these 4 sections.
             """}]
         )
         return response.content[0].text
-
 
 @shared_task(
     bind=True,
@@ -100,6 +110,6 @@ def generate_careplan_task(self, careplan_id: int):
             raise self.retry(exc=e, countdown=countdown)
         except self.MaxRetriesExceededError:
             # 3 次都失败了，标记 failed
-            print(f"[Celery] 重试次数耗尽，careplan_id={careplan_id} 标记为 failed")
+            print(f"[Celery] 重试次数耗尽,careplan_id={careplan_id} 标记为 failed")
             careplan.status = 'failed'
             careplan.save()

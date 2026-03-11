@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 
 // ============================================================
 // MVP 前端 - 所有逻辑都在这一个文件里
@@ -26,33 +26,60 @@ export default function App() {
   const [carePlan, setCarePlan] = useState("");
   const [orderId, setOrderId] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const intervalRef = useRef(null);
 
   // 处理表单字段变化
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
-  // 提交表单 → POST /api/orders/
-  // 现在是同步的：点提交后页面会卡住等 LLM 生成（10-30秒）
-  // 这就是 Day 4 要解决的问题
+
+    // 新增：Polling 函数
+    function startPolling(careplanId) {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+    
+        intervalRef.current = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/careplan/${careplanId}/status/`);
+            const data = await res.json();
+    
+            if (data.status === "completed") {
+            clearInterval(intervalRef.current);
+            setCarePlan(data.content);
+            setStatus("done");
+            } else if (data.status === "failed") {
+            clearInterval(intervalRef.current);
+            setErrorMsg("Care plan generation failed. Please try again.");
+            setStatus("error");
+            }
+            // pending / processing → 什么都不做，等下次轮询
+        } catch (err) {
+            clearInterval(intervalRef.current);
+            setErrorMsg("Network error: " + err.message);
+            setStatus("error");
+        }
+        }, 3000);
+    }
+  
+
   async function handleSubmit() {
     setStatus("loading");
     setCarePlan("");
     setErrorMsg("");
-
+  
     try {
       const response = await fetch("/api/orders/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-
+  
       const data = await response.json();
-
+  
       if (response.ok) {
         setOrderId(data.id);
-        setCarePlan(data.care_plan);
-        setStatus("done");
+        startPolling(data.id);
+        // 注意：不再 setStatus("done")，让 Polling 来决定什么时候 done
       } else {
         setErrorMsg(data.error || "Something went wrong");
         setStatus("error");
@@ -118,15 +145,14 @@ export default function App() {
           disabled={status === "loading"}
           style={status === "loading" ? styles.buttonDisabled : styles.button}
         >
-          {status === "loading" ? "⏳ Generating Care Plan... (please wait)" : "Generate Care Plan"}
+          {status === "loading" ? "⏳ Submitting..." : "Generate Care Plan"}
         </button>
 
         {/* 提示用户等待 - 这就是 Day 4 要解决的体验问题 */}
         {status === "loading" && (
-          <p style={styles.loadingNote}>
-            ℹ️ The LLM is generating your care plan. This takes 10-30 seconds.
-            The page will appear frozen — this is the problem we'll fix in Day 4!
-          </p>
+            <p style={styles.loadingNote}>
+                ℹ️ Order submitted! Generating care plan in the background...
+            </p>
         )}
       </div>
 
