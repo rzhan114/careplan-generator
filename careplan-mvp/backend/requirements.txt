@@ -6,3 +6,4 @@ httpx==0.24.1
 psycopg2-binary==2.9.9
 celery==5.3.6
 redis==5.0.1
+debugpy
