@@ -1,14 +1,10 @@
 import React, { useState, useRef } from "react";
 
-// ============================================================
-// MVP 前端 - 所有逻辑都在这一个文件里
-// 和后端 views.py 一样，Day 7 才会拆分
-// ============================================================
-
 const INITIAL_FORM = {
   first_name: "",
   last_name: "",
   mrn: "",
+  date_of_birth: "",
   provider_name: "",
   provider_npi: "",
   primary_diagnosis: "",
@@ -20,68 +16,70 @@ const INITIAL_FORM = {
 
 export default function App() {
   const [form, setForm] = useState(INITIAL_FORM);
-
-  // status: "idle" | "loading" | "done" | "error"
   const [status, setStatus] = useState("idle");
   const [carePlan, setCarePlan] = useState("");
   const [orderId, setOrderId] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [warningMsg, setWarningMsg] = useState("");
+  const [pendingConfirm, setPendingConfirm] = useState(false);
   const intervalRef = useRef(null);
 
-  // 处理表单字段变化
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
-
-    // 新增：Polling 函数
-    function startPolling(careplanId) {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-    
-        intervalRef.current = setInterval(async () => {
-        try {
-            const res = await fetch(`/api/careplan/${careplanId}/status/`);
-            const data = await res.json();
-    
-            if (data.status === "completed") {
-            clearInterval(intervalRef.current);
-            setCarePlan(data.content);
-            setStatus("done");
-            } else if (data.status === "failed") {
-            clearInterval(intervalRef.current);
-            setErrorMsg("Care plan generation failed. Please try again.");
-            setStatus("error");
-            }
-            // pending / processing → 什么都不做，等下次轮询
-        } catch (err) {
-            clearInterval(intervalRef.current);
-            setErrorMsg("Network error: " + err.message);
-            setStatus("error");
+  function startPolling(careplanId) {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/careplan/${careplanId}/status/`);
+        const data = await res.json();
+        if (data.status === "completed") {
+          clearInterval(intervalRef.current);
+          setCarePlan(data.content);
+          setStatus("done");
+        } else if (data.status === "failed") {
+          clearInterval(intervalRef.current);
+          setErrorMsg("Care plan generation failed. Please try again.");
+          setStatus("error");
         }
-        }, 3000);
-    }
-  
+      } catch (err) {
+        clearInterval(intervalRef.current);
+        setErrorMsg("Network error: " + err.message);
+        setStatus("error");
+      }
+    }, 3000);
+  }
 
-  async function handleSubmit() {
+  async function handleSubmit(confirm = false) {
     setStatus("loading");
     setCarePlan("");
     setErrorMsg("");
-  
+    setWarningMsg("");
+
     try {
       const response = await fetch("/api/orders/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, confirm }),
       });
-  
+
       const data = await response.json();
-  
+      console.log("后端返回:", data);
       if (response.ok) {
-        setOrderId(data.id);
-        startPolling(data.id);
-        // 注意：不再 setStatus("done")，让 Polling 来决定什么时候 done
+        // ← 在这里加一个检查
+        if (data.type === "warning") {
+          setWarningMsg(data.message);
+          setPendingConfirm(true);
+          setStatus("idle");
+        } else {
+          // 真正成功
+          setPendingConfirm(false);
+          setOrderId(data.id);
+          startPolling(data.id);
+        }
       } else {
-        setErrorMsg(data.error || "Something went wrong");
+        setErrorMsg(data.message || "Something went wrong");
         setStatus("error");
       }
     } catch (err) {
@@ -90,7 +88,6 @@ export default function App() {
     }
   }
 
-  // 下载 care plan 为 .txt 文件
   function handleDownload() {
     const blob = new Blob([carePlan], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -105,74 +102,84 @@ export default function App() {
       <h1 style={styles.title}>Care Plan Generator</h1>
       <p style={styles.subtitle}>CVS Specialty Pharmacy</p>
 
-      {/* ---- 表单区域 ---- */}
+      {/* 表单 */}
       <div style={styles.card}>
-        <h2 style={styles.sectionTitle}>Patient Information</h2>
+        <Section title="Patient Information">
+          <div style={styles.row}>
+            <Field label="First Name *" name="first_name" value={form.first_name} onChange={handleChange} />
+            <Field label="Last Name *" name="last_name" value={form.last_name} onChange={handleChange} />
+          </div>
+          <div style={styles.row}>
+            <Field label="MRN (6 digits) *" name="mrn" value={form.mrn} onChange={handleChange} placeholder="e.g. 001234" />
+            <Field label="Date of Birth *" name="date_of_birth" value={form.date_of_birth} onChange={handleChange} placeholder="e.g. 1979-06-08" />
+          </div>
+          <div style={styles.row}>
+            <Field label="Primary Diagnosis (ICD-10) *" name="primary_diagnosis" value={form.primary_diagnosis} onChange={handleChange} placeholder="e.g. G70.01" />
+            <Field label="Medication Name *" name="medication_name" value={form.medication_name} onChange={handleChange} placeholder="e.g. IVIG" />
+          </div>
+          <div style={styles.row}>
+            <Field label="Additional Diagnoses" name="additional_diagnoses" value={form.additional_diagnoses} onChange={handleChange} placeholder="e.g. I10, K21.0" />
+            <div style={styles.fieldWrapper} />
+          </div>
+        </Section>
 
-        <div style={styles.row}>
-          <Field label="First Name *" name="first_name" value={form.first_name} onChange={handleChange} />
-          <Field label="Last Name *" name="last_name" value={form.last_name} onChange={handleChange} />
-        </div>
+        <Section title="Provider Information">
+          <div style={styles.row}>
+            <Field label="Provider Name *" name="provider_name" value={form.provider_name} onChange={handleChange} />
+            <Field label="Provider NPI (10 digits) *" name="provider_npi" value={form.provider_npi} onChange={handleChange} placeholder="e.g. 1234567890" />
+          </div>
+        </Section>
 
-        <div style={styles.row}>
-          <Field label="MRN (6 digits) *" name="mrn" value={form.mrn} onChange={handleChange} placeholder="e.g. 001234" />
-          <Field label="Primary Diagnosis (ICD-10) *" name="primary_diagnosis" value={form.primary_diagnosis} onChange={handleChange} placeholder="e.g. G70.01" />
-        </div>
+        <Section title="Clinical Notes">
+          <TextArea label="Medication History" name="medication_history" value={form.medication_history} onChange={handleChange} placeholder="e.g. Pyridostigmine 60mg, Prednisone 10mg..." />
+          <TextArea label="Patient Records" name="patient_records" value={form.patient_records} onChange={handleChange} placeholder="Paste clinical notes, recent history..." rows={6} />
+        </Section>
 
-        <div style={styles.row}>
-          <Field label="Medication Name *" name="medication_name" value={form.medication_name} onChange={handleChange} placeholder="e.g. IVIG" />
-          <Field label="Additional Diagnoses" name="additional_diagnoses" value={form.additional_diagnoses} onChange={handleChange} placeholder="e.g. I10, K21.0" />
-        </div>
-
-        <h2 style={{ ...styles.sectionTitle, marginTop: 24 }}>Provider Information</h2>
-
-        <div style={styles.row}>
-          <Field label="Provider Name *" name="provider_name" value={form.provider_name} onChange={handleChange} />
-          <Field label="Provider NPI (10 digits) *" name="provider_npi" value={form.provider_npi} onChange={handleChange} placeholder="e.g. 1234567890" />
-        </div>
-
-        <h2 style={{ ...styles.sectionTitle, marginTop: 24 }}>Clinical Notes</h2>
-
-        <TextArea label="Medication History" name="medication_history" value={form.medication_history} onChange={handleChange}
-          placeholder="e.g. Pyridostigmine 60mg, Prednisone 10mg..." />
-
-        <TextArea label="Patient Records" name="patient_records" value={form.patient_records} onChange={handleChange}
-          placeholder="Paste clinical notes, recent history..." rows={6} />
-
-        {/* 提交按钮 */}
         <button
-          onClick={handleSubmit}
+          onClick={() => handleSubmit(false)}
           disabled={status === "loading"}
           style={status === "loading" ? styles.buttonDisabled : styles.button}
         >
           {status === "loading" ? "⏳ Submitting..." : "Generate Care Plan"}
         </button>
 
-        {/* 提示用户等待 - 这就是 Day 4 要解决的体验问题 */}
         {status === "loading" && (
-            <p style={styles.loadingNote}>
-                ℹ️ Order submitted! Generating care plan in the background...
-            </p>
+          <p style={styles.loadingNote}>
+            ℹ️ Order submitted! Generating care plan in the background...
+          </p>
         )}
       </div>
 
-      {/* ---- 错误提示 ---- */}
+      {/* Warning 确认框 */}
+      {pendingConfirm && (
+        <div style={styles.warningBox}>
+          <strong>⚠️ Warning:</strong> {warningMsg}
+          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+            <button onClick={() => handleSubmit(true)} style={styles.confirmButton}>
+              Yes, proceed anyway
+            </button>
+            <button onClick={() => { setPendingConfirm(false); setWarningMsg(""); }} style={styles.cancelButton}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 错误提示 */}
       {status === "error" && (
         <div style={styles.errorBox}>
           <strong>Error:</strong> {errorMsg}
         </div>
       )}
 
-      {/* ---- 结果显示 ---- */}
+      {/* 结果 */}
       {status === "done" && (
         <div style={styles.resultCard}>
           <div style={styles.resultHeader}>
             <h2 style={{ margin: 0 }}>✅ Care Plan Generated</h2>
             <span style={styles.orderId}>Order ID: {orderId}</span>
           </div>
-
           <pre style={styles.carePlanText}>{carePlan}</pre>
-
           <button onClick={handleDownload} style={styles.downloadButton}>
             ⬇️ Download as .txt
           </button>
@@ -182,19 +189,21 @@ export default function App() {
   );
 }
 
-// ---- 小组件 ----
+// 小组件
+function Section({ title, children }) {
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <h2 style={styles.sectionTitle}>{title}</h2>
+      {children}
+    </div>
+  );
+}
 
 function Field({ label, name, value, onChange, placeholder }) {
   return (
     <div style={styles.fieldWrapper}>
       <label style={styles.label}>{label}</label>
-      <input
-        name={name}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder || ""}
-        style={styles.input}
-      />
+      <input name={name} value={value} onChange={onChange} placeholder={placeholder || ""} style={styles.input} />
     </div>
   );
 }
@@ -203,19 +212,10 @@ function TextArea({ label, name, value, onChange, placeholder, rows = 3 }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <label style={styles.label}>{label}</label>
-      <textarea
-        name={name}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder || ""}
-        rows={rows}
-        style={styles.textarea}
-      />
+      <textarea name={name} value={value} onChange={onChange} placeholder={placeholder || ""} rows={rows} style={styles.textarea} />
     </div>
   );
 }
-
-// ---- 样式 ----
 
 const styles = {
   container: { maxWidth: 800, margin: "0 auto", padding: "24px 16px", fontFamily: "system-ui, sans-serif" },
@@ -232,6 +232,9 @@ const styles = {
   buttonDisabled: { marginTop: 8, padding: "10px 24px", background: "#93c5fd", color: "#fff", border: "none", borderRadius: 6, fontSize: 15, cursor: "not-allowed", fontWeight: "500" },
   loadingNote: { marginTop: 12, color: "#92400e", background: "#fef3c7", padding: "8px 12px", borderRadius: 4, fontSize: 13 },
   errorBox: { background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 6, padding: 16, marginBottom: 24, color: "#991b1b" },
+  warningBox: { background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 6, padding: 16, marginBottom: 24, color: "#92400e" },
+  confirmButton: { padding: "8px 16px", background: "#d97706", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 14 },
+  cancelButton: { padding: "8px 16px", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: 4, cursor: "pointer", fontSize: 14 },
   resultCard: { background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: 24 },
   resultHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   orderId: { fontSize: 12, color: "#666", background: "#e5e7eb", padding: "2px 8px", borderRadius: 4 },

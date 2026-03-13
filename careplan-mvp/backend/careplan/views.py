@@ -1,6 +1,4 @@
 # careplan/views.py
-# 负责：接收 HTTP 请求，返回 HTTP 响应
-# 不做任何业务逻辑，全部委托给 services
 
 import json
 from django.http import JsonResponse
@@ -10,30 +8,34 @@ from django.views.decorators.http import require_http_methods
 from .serializers import OrderCreateSerializer
 from .models import CarePlan
 from . import services
+from .exception_handler import handle_exception
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_order(request):
-    # 1. 解析请求数据
-    data = json.loads(request.body)
+    try:
+        data = json.loads(request.body)
 
-    # 2. 用 serializer 提取字段
-    serializer = OrderCreateSerializer(data)
-    if not serializer.is_valid():
-        return JsonResponse({"errors": serializer.errors}, status=400)
+        # serializer 验证，不通过直接 raise ValidationError
+        serializer = OrderCreateSerializer(data)
+        serializer.raise_if_invalid()
 
-    validated_data = serializer.get_validated_data()
+        validated_data = serializer.get_validated_data()
+        confirm = data.get("confirm", False)
 
-    # 3. 调用 service 完成业务逻辑
-    careplan = services.create_order_with_careplan(validated_data)
+        careplan, warnings = services.create_order_with_careplan(validated_data, confirm=confirm)
 
-    # 4. 返回响应
-    return JsonResponse({
-        "id": careplan.id,
-        "status": careplan.status,
-        "message": "Received, Processing",
-    })
+        return JsonResponse({
+            "id": careplan.id,
+            "status": careplan.status,
+            "message": "Received, Processing",
+            "warnings": warnings,
+        })
+
+    except Exception as exc:
+        print(f"Exception type: {type(exc)}, value: {exc}") 
+        return handle_exception(exc)
 
 
 @require_http_methods(["GET"])
@@ -47,21 +49,23 @@ def get_order(request, order_id):
         })
     except CarePlan.DoesNotExist:
         return JsonResponse({"error": "Order not found"}, status=404)
+    except Exception as exc:
+        return handle_exception(exc)
 
 
 @require_http_methods(["GET"])
 def get_careplan_status(request, careplan_id):
     try:
         careplan = services.get_careplan_by_id(careplan_id)
+        response = {
+            'id': careplan.id,
+            'status': careplan.status,
+            'content': None,
+        }
+        if careplan.status == 'completed':
+            response['content'] = careplan.content
+        return JsonResponse(response)
     except CarePlan.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
-
-    response = {
-        'id': careplan.id,
-        'status': careplan.status,
-        'content': None,
-    }
-    if careplan.status == 'completed':
-        response['content'] = careplan.content
-
-    return JsonResponse(response)
+    except Exception as exc:
+        return handle_exception(exc)
