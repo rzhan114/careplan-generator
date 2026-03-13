@@ -125,6 +125,7 @@ def get_order(request, order_id):
         })
     except CarePlan.DoesNotExist:
         return JsonResponse({"error": "Order not found"}, status=404)
+# Polling
 @require_http_methods(["GET"])
 def get_careplan_status(request, careplan_id):
     if request.method != 'GET':
