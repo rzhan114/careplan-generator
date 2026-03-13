@@ -1,6 +1,17 @@
 version: "3.8"
 
 services:
+  test:
+    build: ./backend
+    command: pytest tests/ -v --cov=careplan --cov-report=term-missing
+    environment:
+      - DJANGO_SETTINGS_MODULE=careplan.settings
+      - DB_HOST=db
+      - USE_MOCK_LLM=true
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
   db:
     image: postgres:15
     environment:
