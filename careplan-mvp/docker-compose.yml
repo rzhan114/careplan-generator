@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   test:
     build: ./backend
@@ -8,11 +6,12 @@ services:
       - DJANGO_SETTINGS_MODULE=careplan.settings
       - DB_HOST=db
       - USE_MOCK_LLM=true
-      - LLM_PROVIDER=mock      # 加这行
+      - LLM_PROVIDER=mock
     volumes:
       - ./backend:/app
     depends_on:
       - db
+
   db:
     image: postgres:15
     environment:
@@ -23,43 +22,50 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-  redis:                          # 新加这一块
-    image: redis:7-alpine         # 轻量版Redis镜像
+
+  redis:
+    image: redis:7-alpine
     ports:
-      - "6379:6379"               # Redis默认端口
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+
   worker:
     build: ./backend
-    command: celery -A careplan worker --loglevel=info 
+    command: celery -A careplan worker --loglevel=info
     environment:
       - REDIS_HOST=redis
       - USE_MOCK_LLM=true
+      - LLM_PROVIDER=mock
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DJANGO_SETTINGS_MODULE=careplan.settings
       - DB_HOST=db
-      - PYTHONUNBUFFERED=1 
+      - PYTHONUNBUFFERED=1
+      - PROMETHEUS_MULTIPROC_DIR=/tmp
     volumes:
       - ./backend:/app
     depends_on:
       - db
       - redis
+
   backend:
     build: ./backend
     ports:
       - "8000:8000"
-      - "5678:5678" 
+      - "5678:5678"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - DB_HOST=db          # ← 告诉 backend 去找叫 "db" 的容器
-      - LLM_PROVIDER=mock      # 加这行
+      - DB_HOST=db
+      - LLM_PROVIDER=mock
+      - DJANGO_SETTINGS_MODULE=careplan.settings  # 补上
     volumes:
       - ./backend:/app
     command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --noreload
     depends_on:
-      - db                  # ← 先启动数据库再启动 backend
+      - db
 
   frontend:
     build: ./frontend
@@ -69,5 +75,29 @@ services:
       - ./frontend/src:/app/src
     depends_on:
       - backend
+
+  # 新加的两个服务
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"    # 注意：前端已经占了 3000，这里用 3001
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
-    postgres_data:            # ← 数据持久化，重启容器数据不会丢
+  postgres_data:
+  grafana_data:    # 新加，让 Grafana 的 dashboard 配置持久化
