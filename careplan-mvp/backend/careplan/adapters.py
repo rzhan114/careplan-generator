@@ -86,6 +86,13 @@ class BaseIntakeAdapter(ABC):
         validated_data = self.validate(parsed_data)
         self.internal_order = self.transform(validated_data)
         return self.internal_order
+    
+    def get_confirm(self) -> bool:
+        """
+        是否确认跳过 warning
+        默认 False，子类按需重写
+        """
+        return False
 
 
 # ========================================
@@ -125,6 +132,10 @@ class ClinicBAdapter(BaseIntakeAdapter):
             "medication_history":   self.raw_data["med_hx"],
             "patient_records":      self.raw_data["clinical_notes"],
         }
+        
+    def get_confirm(self) -> bool:
+        # Clinic B 在 order_info 里传 confirm
+        return self.raw_data.get("order_info", {}).get("confirm", False)
 
 
 # ========================================
@@ -188,6 +199,9 @@ class WebFormAdapter(BaseIntakeAdapter):
     def parse(self) -> dict:
         # 已经是标准格式，直接返回
         return self.raw_data
+    
+    def get_confirm(self) -> bool:
+        return self.raw_data.get("confirm", False)
 
 
 # ========================================

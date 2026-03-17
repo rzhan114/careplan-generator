@@ -5,6 +5,7 @@ import time
 from datetime import date
 from .models import Patient, Provider, Order, CarePlan
 from .exceptions import BlockError, WarningException
+from .internal_models import InternalOrder
 
 
 # ============================================================
@@ -171,53 +172,48 @@ def check_order_duplicate(patient: Patient, medication_name: str, confirm: bool 
         )
 
 
-def create_order_with_careplan(validated_data: dict, confirm: bool = False) -> CarePlan:
-    # 1. Provider 重复检测（可能 raise BlockError）
+# 函数签名改成接收 InternalOrder
+def create_order_with_careplan(order: InternalOrder, confirm: bool = False) -> CarePlan:
+    # 1. Provider 重复检测
     provider = get_or_create_provider(
-        name=validated_data['provider_name'],
-        npi=validated_data['provider_npi'],
+        name=order.provider.name,
+        npi=order.provider.npi,
     )
-
-    # 2. Patient 重复检测（可能 raise WarningException）
+    # 2. Patient 重复检测
     patient, warnings = get_or_create_patient(
-        first_name=validated_data['first_name'],
-        last_name=validated_data['last_name'],
-        mrn=validated_data['mrn'],
-        date_of_birth=validated_data['date_of_birth'],
+        first_name=order.patient.first_name,
+        last_name=order.patient.last_name,
+        mrn=order.patient.mrn,
+        date_of_birth=order.patient.date_of_birth,
         confirm=confirm,
     )
-
-    # 3. Order 重复检测（可能 raise BlockError 或 WarningException）
+    # 3. Order 重复检测
     check_order_duplicate(
         patient=patient,
-        medication_name=validated_data['medication_name'],
+        medication_name=order.medication.medication_name,
         confirm=confirm,
     )
-
     # 4. 创建 Order
-    order = Order.objects.create(
+    order_obj = Order.objects.create(
         patient=patient,
         provider=provider,
-        medication_name=validated_data['medication_name'],
-        primary_diagnosis=validated_data['primary_diagnosis'],
-        additional_diagnoses=validated_data.get('additional_diagnoses', []),
-        medication_history=validated_data.get('medication_history', []),
-        patient_records=validated_data.get('patient_records', ''),
+        medication_name=order.medication.medication_name,
+        primary_diagnosis=order.medication.primary_diagnosis,
+        additional_diagnoses=order.medication.additional_diagnoses,
+        medication_history=order.medication.medication_history,
+        patient_records=order.medication.patient_records,
     )
-
     # 5. 创建 CarePlan
     careplan = CarePlan.objects.create(
-        order=order,
+        order=order_obj,
         status=CarePlan.Status.PENDING
     )
-
     # 6. 放进 Celery 队列
     try:
         from careplan.tasks import generate_careplan_task
         generate_careplan_task.delay(careplan.id)
     except Exception as e:
         print(f"Redis error: {e}")
-
     return careplan, warnings
 
 

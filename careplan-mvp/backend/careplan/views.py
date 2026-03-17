@@ -8,7 +8,6 @@ from .models import CarePlan
 from . import services
 from .exception_handler import handle_exception
 from .adapters import get_adapter
-from .intake_handlers import internal_order_to_serializer_data
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -20,18 +19,12 @@ def create_order(request):
         # 2. run() 内部：parse → validate → transform
         internal_order = adapter.run()
 
-        # 3. 转成 dict 传给 services
-        data = internal_order_to_serializer_data(internal_order)
-
         # 4. confirm 只有 JSON 请求才有，XML 请求没有
         content_type = request.content_type or ""
-        if "xml" in content_type:
-            confirm = False
-        else:
-            confirm = json.loads(request.body).get("confirm", False)
+        confirm = adapter.get_confirm()
 
         careplan, warnings = services.create_order_with_careplan(
-            data, confirm=confirm
+            internal_order, confirm=confirm
         )
         return JsonResponse({
             "id": careplan.id,
