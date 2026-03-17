@@ -7,65 +7,6 @@ from .models import Patient, Provider, Order, CarePlan
 from .exceptions import BlockError, WarningException
 from .internal_models import InternalOrder
 
-
-# ============================================================
-# LLM 调用逻辑
-# 从 tasks.py 搬过来，tasks.py 改成调用这里
-# ============================================================
-def call_llm(patient, order, provider) -> str:
-    USE_MOCK = os.environ.get('USE_MOCK_LLM', 'true').lower() == 'true'
-
-    if USE_MOCK:
-        time.sleep(2)
-        return f"""
-Problem list:
-- Need for treatment with {order.medication_name}
-- Risk of adverse reactions
-
-Goals (SMART):
-- Complete full course within prescribed timeline
-- No severe adverse reactions
-
-Pharmacist interventions:
-- Verify dosing schedule
-- Screen for drug interactions
-- Counsel patient on side effects
-
-Monitoring plan:
-- Baseline labs before treatment
-- Follow-up at 2 weeks
-        """.strip()
-    else:
-        from anthropic import Anthropic
-        client = Anthropic()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1000,
-            messages=[{"role": "user", "content": f"""
-You are a clinical pharmacist. Generate a professional care plan based on the following patient information.
-Patient Information:
-Patient: {patient.first_name} {patient.last_name}
-MRN: {patient.mrn}
-Medication: {order.medication_name}
-Primary Diagnosis: {order.primary_diagnosis}
-Additional Diagnoses: {order.additional_diagnoses}
-Medication History: {order.medication_history}
-Patient Records: {order.patient_records}
-Referring Provider: {provider.name} (NPI: {provider.npi})
-
-Please generate a comprehensive care plan that includes:
-
-1. Problem List / Drug Therapy Problems (DTPs)
-2. Goals (SMART goals)
-3. Pharmacist Interventions / Plan
-4. Monitoring Plan & Lab Schedule
-
-Format the response clearly with these 4 sections.
-            """}]
-        )
-        return response.content[0].text
-
-
 def get_or_create_provider(name: str, npi: str) -> Provider:
     try:
         existing = Provider.objects.get(npi=npi)

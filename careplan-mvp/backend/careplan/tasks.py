@@ -1,5 +1,5 @@
 # careplan/tasks.py
-# 负责：Celery 任务的调度和重试，业务逻辑调用 services.py
+# 负责：Celery 任务的调度和重试，业务逻辑调用 llm_service.py
 
 from celery import shared_task
 
@@ -10,13 +10,9 @@ from celery import shared_task
     default_retry_delay=60,
 )
 def generate_careplan_task(self, careplan_id: int):
-    """
-    Celery 异步任务入口
-    只负责：调度、重试逻辑
-    真正的业务逻辑在 services.call_llm()
-    """
     from careplan.models import CarePlan
-    from careplan.services import call_llm  # 从 services 调用
+    from careplan.llm_service import get_llm_service
+    from careplan.internal_models import InternalOrder, PatientInfo, ProviderInfo, MedicationInfo
 
     print(f"[Celery] 开始处理 careplan_id={careplan_id}")
 
@@ -33,8 +29,31 @@ def generate_careplan_task(self, careplan_id: int):
         careplan.status = 'processing'
         careplan.save()
 
-        # 调用 services 里的 LLM 逻辑
-        content = call_llm(patient, order, provider)
+        # 把 Django model 对象组装成 InternalOrder
+        internal_order = InternalOrder(
+            patient=PatientInfo(
+                first_name=patient.first_name,
+                last_name=patient.last_name,
+                mrn=patient.mrn,
+                date_of_birth=str(patient.date_of_birth),
+            ),
+            provider=ProviderInfo(
+                name=provider.name,
+                npi=provider.npi,
+            ),
+            medication=MedicationInfo(
+                medication_name=order.medication_name, 
+                primary_diagnosis=order.primary_diagnosis,
+                additional_diagnoses=order.additional_diagnoses or [],
+                medication_history=order.medication_history or [],
+                patient_records=order.patient_records or "",
+            ),
+            source="webform",
+        )
+
+        # 调用 LLM
+        llm = get_llm_service()
+        content = llm.generate_care_plan(internal_order)
 
         careplan.content = content
         careplan.status = 'completed'

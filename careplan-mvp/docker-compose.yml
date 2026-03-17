@@ -8,6 +8,7 @@ services:
       - DJANGO_SETTINGS_MODULE=careplan.settings
       - DB_HOST=db
       - USE_MOCK_LLM=true
+      - LLM_PROVIDER=mock      # 加这行
     volumes:
       - ./backend:/app
     depends_on:
@@ -53,6 +54,7 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DB_HOST=db          # ← 告诉 backend 去找叫 "db" 的容器
+      - LLM_PROVIDER=mock      # 加这行
     volumes:
       - ./backend:/app
     command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --noreload
