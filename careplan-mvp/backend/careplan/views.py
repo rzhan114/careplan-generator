@@ -1,40 +1,46 @@
 # careplan/views.py
-
 import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-
 from .serializers import OrderCreateSerializer
 from .models import CarePlan
 from . import services
 from .exception_handler import handle_exception
-
+from .adapters import get_adapter
+from .intake_handlers import internal_order_to_serializer_data
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_order(request):
     try:
-        data = json.loads(request.body)
+        # 1. 选 Adapter
+        adapter = get_adapter(request)
 
-        # serializer 验证，不通过直接 raise ValidationError
-        serializer = OrderCreateSerializer(data)
-        serializer.raise_if_invalid()
+        # 2. run() 内部：parse → validate → transform
+        internal_order = adapter.run()
 
-        validated_data = serializer.get_validated_data()
-        confirm = data.get("confirm", False)
+        # 3. 转成 dict 传给 services
+        data = internal_order_to_serializer_data(internal_order)
 
-        careplan, warnings = services.create_order_with_careplan(validated_data, confirm=confirm)
+        # 4. confirm 只有 JSON 请求才有，XML 请求没有
+        content_type = request.content_type or ""
+        if "xml" in content_type:
+            confirm = False
+        else:
+            confirm = json.loads(request.body).get("confirm", False)
 
+        careplan, warnings = services.create_order_with_careplan(
+            data, confirm=confirm
+        )
         return JsonResponse({
             "id": careplan.id,
             "status": careplan.status,
             "message": "Received, Processing",
             "warnings": warnings,
         })
-
     except Exception as exc:
-        print(f"Exception type: {type(exc)}, value: {exc}") 
+        print(f"Exception type: {type(exc)}, value: {exc}")
         return handle_exception(exc)
 
 
