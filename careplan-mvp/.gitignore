@@ -10,3 +10,7 @@ node_modules/
 
 # Docker
 *.log
+backend/lambda_package/
+backend/lambda_deploy.zip
+lambda_deploy.zip
+.coverage
