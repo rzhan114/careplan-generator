@@ -6,6 +6,7 @@ from datetime import date
 from .models import Patient, Provider, Order, CarePlan
 from .exceptions import BlockError, WarningException
 from .internal_models import InternalOrder
+from django.db.models import Q
 
 def get_or_create_provider(name: str, npi: str) -> Provider:
     try:
@@ -160,3 +161,32 @@ def create_order_with_careplan(order: InternalOrder, confirm: bool = False) -> C
 
 def get_careplan_by_id(careplan_id: int) -> CarePlan:
     return CarePlan.objects.get(id=careplan_id)
+
+# careplan/services.py
+
+def get_orders_list(status=None, patient_name=None, page=1, page_size=20):
+    """
+    返回 CarePlan 列表，支持按 status 筛选和按患者名字模糊搜索。
+    """
+    queryset = CarePlan.objects.select_related('order__patient').order_by('-id')
+
+    # 按 status 筛选
+    if status:
+        queryset = queryset.filter(status=status)
+
+    # 按患者名字模糊搜索（first_name 或 last_name 包含关键词）
+    if patient_name:
+        queryset = queryset.filter(
+            Q(order__patient__first_name__icontains=patient_name) |
+            Q(order__patient__last_name__icontains=patient_name)
+        )
+
+    # 计算总数（在分页之前算）
+    total_count = queryset.count()
+
+    # 分页
+    offset = (page - 1) * page_size
+    results = queryset[offset: offset + page_size]
+
+    return total_count, list(results)
+

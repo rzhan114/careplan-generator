@@ -38,16 +38,47 @@ def create_order(request):
 
 
 @require_http_methods(["GET"])
-def get_order(request, order_id):
+def get_order(request):
     try:
-        careplan = services.get_careplan_by_id(order_id)
+        # 从 query params 读取参数，提供默认值
+        status = request.GET.get('status', None)
+        patient_name = request.GET.get('patient_name', None)
+        
+        # 分页参数，注意类型转换 + 防止非法输入
+        try:
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 20))
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "page and page_size must be integers"}, status=400)
+
+        # 防止 page_size 太大（防止一次查几千条）
+        if page_size > 100:
+            page_size = 100
+        if page < 1:
+            page = 1
+
+        total_count, results = services.get_orders_list(
+            status=status,
+            patient_name=patient_name,
+            page=page,
+            page_size=page_size,
+        )
+
         return JsonResponse({
-            "id": careplan.id,
-            "status": careplan.status,
-            "care_plan": careplan.content,
+            "count": total_count,
+            "page": page,
+            "page_size": page_size,
+            "results": [
+                {
+                    "id": cp.id,
+                    "status": cp.status,
+                    "patient_name": f"{cp.order.patient.first_name} {cp.order.patient.last_name}",
+                    "medication_name": cp.order.medication_name,
+                    "created_at": cp.order.created_at.isoformat(),
+                }
+                for cp in results
+            ]
         })
-    except CarePlan.DoesNotExist:
-        return JsonResponse({"error": "Order not found"}, status=404)
     except Exception as exc:
         return handle_exception(exc)
 
