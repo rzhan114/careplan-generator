@@ -12,8 +12,13 @@ class Provider(models.Model):
 class Patient(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
-    mrn = models.CharField(max_length=6, unique=True)  # 6位唯一ID
+    mrn = models.CharField(max_length=6, unique=True)
     date_of_birth = models.DateField()
+    sex = models.CharField(max_length=10, blank=True, default='')
+    weight_kg = models.FloatField(null=True, blank=True)
+    allergies = models.TextField(blank=True, default='')
+    primary_diagnosis = models.CharField(max_length=20, blank=True, default='')
+    additional_diagnoses = models.JSONField(default=list)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

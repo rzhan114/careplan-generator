@@ -12,6 +12,8 @@ INSTALLED_APPS = [
     "corsheaders",
     "careplan",
     'patient', 
+    "provider",
+    "order",
 ]
 
 MIDDLEWARE = [
